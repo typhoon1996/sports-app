@@ -6,22 +6,41 @@
     "dev": "next dev --turbopack",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "start:prod": "NODE_ENV=production next start",
+    "lint": "next lint",
+    "lint:fix": "next lint --fix",
+    "type-check": "tsc --noEmit",
+    "clean": "rimraf .next out dist",
+    "analyze": "ANALYZE=true npm run build",
+    "export": "next export"
   },
   "dependencies": {
+    "@googlemaps/js-api-loader": "^1.16.10",
+    "@hookform/resolvers": "^5.1.1",
+    "@react-google-maps/api": "^2.20.7",
+    "axios": "^1.10.0",
+    "clsx": "^2.1.1",
+    "lucide-react": "^0.525.0",
+    "next": "15.3.5",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "next": "15.3.5"
+    "react-hook-form": "^7.60.0",
+    "socket.io-client": "^4.8.1",
+    "tailwind-merge": "^3.3.1",
+    "zod": "^3.25.74",
+    "zustand": "^5.0.6"
   },
   "devDependencies": {
-    "typescript": "^5",
+    "@eslint/eslintrc": "^3",
+    "@tailwindcss/postcss": "^4",
     "@types/node": "^20",
     "@types/react": "^19",
     "@types/react-dom": "^19",
-    "@tailwindcss/postcss": "^4",
-    "tailwindcss": "^4",
+    "@next/bundle-analyzer": "^15.3.5",
     "eslint": "^9",
     "eslint-config-next": "15.3.5",
-    "@eslint/eslintrc": "^3"
+    "rimraf": "^6.0.1",
+    "tailwindcss": "^4",
+    "typescript": "^5"
   }
 }

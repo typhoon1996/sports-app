@@ -1,0 +1,83 @@
+# Docker Compose override for development
+# This file extends docker-compose.yml with development-specific configurations
+
+version: '3.8'
+
+services:
+  postgres:
+    # Development optimizations
+    command: >
+      postgres
+      -c shared_preload_libraries=pg_stat_statements
+      -c pg_stat_statements.track=all
+      -c max_connections=100
+      -c shared_buffers=256MB
+      -c effective_cache_size=1GB
+      -c maintenance_work_mem=64MB
+      -c checkpoint_completion_target=0.9
+      -c wal_buffers=16MB
+      -c default_statistics_target=100
+      -c random_page_cost=1.1
+      -c effective_io_concurrency=200
+      -c work_mem=4MB
+      -c min_wal_size=1GB
+      -c max_wal_size=4GB
+      -c log_statement=all
+      -c log_duration=on
+    environment:
+      POSTGRES_INITDB_ARGS: "--auth-local=trust --auth-host=md5"
+    # Expose logs for debugging
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  redis:
+    # Development optimizations  
+    command: >
+      redis-server
+      --appendonly yes
+      --appendfsync everysec
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+      --loglevel notice
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # Optional: Add Adminer for database management in development
+  adminer:
+    image: adminer:4-standalone
+    container_name: sports-adminer
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      ADMINER_DEFAULT_SERVER: postgres
+      ADMINER_DESIGN: flat
+    networks:
+      - sports-network
+    depends_on:
+      - postgres
+
+  # Optional: Add Redis Commander for Redis management
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: sports-redis-commander
+    restart: unless-stopped
+    ports:
+      - "8081:8081"
+    environment:
+      REDIS_HOSTS: local:redis:6379
+      HTTP_USER: admin
+      HTTP_PASSWORD: admin
+    networks:
+      - sports-network
+    depends_on:
+      - redis
