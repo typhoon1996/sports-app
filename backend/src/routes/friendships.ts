@@ -4,43 +4,48 @@ import friendshipsController from '../controllers/friendshipsController';
 
 const router = express.Router(); // Changed to router variable
 
+// Friend Requests
 router.post(
-  '/request/:receiverId',
+  '/requests/:receiverId', // Renamed to plural 'requests'
   authenticateToken,
   friendshipsController.sendFriendRequest
 );
 router.put(
-  '/accept/:requestId',
+  '/requests/:requestId/accept', // Renamed for clarity on action
   authenticateToken,
   friendshipsController.acceptFriendRequest
 );
 router.put(
-  '/reject/:requestId',
+  '/requests/:requestId/reject', // Renamed for clarity on action
   authenticateToken,
   friendshipsController.rejectFriendRequest
 );
+router.get(
+  '/pending', // Keep '/pending' for fetching pending requests
+  authenticateToken,
+  friendshipsController.getUserPendingRequests
+);
+
+// Friendships
 router.get(
   '/friendships',
   authenticateToken,
   friendshipsController.getUserFriendships
 );
-router.get(
-  '/pending',
-  authenticateToken,
-  friendshipsController.getUserPendingRequests
-);
 router.delete(
-  '/:friendshipId',
+  '/friendships/:friendshipId', // Renamed to include '/friendships'
   authenticateToken,
   friendshipsController.removeFriendship
 );
+
+// Blocking
 router.put( // Changed to put for block user
-  '/block/:userId',
+  '/blocking/:userId', // Renamed to plural 'blocking'
   authenticateToken,
   friendshipsController.blockUser // Add blockUser controller
 );
 router.put(
-  '/unblock/:userId',
+  '/blocking/:userId/unblock', // Renamed for clarity on action
   authenticateToken,
   friendshipsController.unblockUser
 );

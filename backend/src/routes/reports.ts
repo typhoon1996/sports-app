@@ -4,7 +4,7 @@ import reportsController from '../controllers/reportsController';
 
 const router = express.Router();
 
-// User reporting routes
+// Protected routes (User Reporting)
 router.post('/match/:matchId', authenticateToken, reportsController.reportMatch);
 router.post('/user/:userId', authenticateToken, reportsController.reportUser);
 // Assuming message IDs are available and can be sent in the request body or parameters

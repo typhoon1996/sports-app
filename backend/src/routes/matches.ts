@@ -21,18 +21,24 @@ router.get('/', getMatches);
 router.get('/:id', getMatchById);
 router.get('/:id/details', getMatchDetails);
 
-// Protected routes
-router.post('/', authenticateToken, createMatch);
-router.put('/:id', authenticateToken, updateMatch);
-router.delete('/:id', authenticateToken, deleteMatch);
+// Protected routes (authentication required)
 
-// User-specific routes
-router.get('/user/organized', authenticateToken, getUserMatches);
-router.get('/user/participating', authenticateToken, getUserParticipatingMatches);
+// Match Management
+router.post('/', authenticateToken, createMatch); // Create a new match
+router.put('/:id', authenticateToken, updateMatch); // Update a match by ID
+router.delete('/:id', authenticateToken, deleteMatch); // Delete a match by ID
 
-// Participation routes
-router.post('/:matchId/join', authenticateToken, joinMatch);
-router.delete('/:matchId/leave', authenticateToken, leaveMatch);
-router.get('/:matchId/participants', getMatchParticipants);
+// User-Specific Matches
+router.get('/user/organized', authenticateToken, getUserMatches); // Get matches organized by the authenticated user
+router.get('/user/participating', authenticateToken, getUserParticipatingMatches); // Get matches the authenticated user is participating in
+
+// Participation
+router.post('/:matchId/join', authenticateToken, joinMatch); // Join a match
+router.delete('/:matchId/leave', authenticateToken, leaveMatch); // Leave a match
+
+// Note: getMatchParticipants is intentionally public as it allows anyone to view participants.
+// If participant viewing should be restricted, move this route to the protected section.
+router.get('/:matchId/participants', getMatchParticipants); // Get participants of a match
+
 
 export default router;

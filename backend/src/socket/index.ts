@@ -4,7 +4,13 @@ import User from '../models/User';
 import Match from '../models/Match';
 import UserMatch from '../models/UserMatch';
 import { createNotification } from '../utils/notificationUtils';
-import { Op } from 'sequelize';import Friendship from '../models/Friendship';
+import { Op } from 'sequelize';
+import Friendship from '../models/Friendship';
+// import { socketAuthMiddleware } from '../middleware/socketAuth'; // Import from the new middleware file
+import { isBlocked } from '../utils/friendshipUtils';
+import { getUserById } from '../utils/userUtils';
+import { getMatchParticipants as getMatchParticipantsUtil } from '../utils/matchUtils';
+import { UnauthorizedError } from '../utils/errors';
 
 // Map to store userId to an array of socket IDs
 const userSocketMap: Map<string, string[]> = new Map();
@@ -101,21 +107,14 @@ export const setupSocketHandlers = (io: Server<ClientToServerEvents, ServerToCli
       try {
         const { matchId } = data;
         
-        // Verify user is participant in the match
-        const participation = await UserMatch.findOne({
-          where: { user_id: socket.userId, match_id: matchId }
-        });
-
-        if (!participation) {
-          socket.emit('error', { message: 'Not authorized to join this match' });
-          return;
-        }
-
+        // This will throw UnauthorizedError if not participant
+ await isUserMatchParticipant(socket.userId!, matchId);
+        
         // Join the match room
         socket.join(`match:${matchId}`);
         
         // Get user details
-        const user = await User.findByPk(socket.userId);
+        const user = await getUserById(socket.userId!);
         
         // Notify other participants
         socket.to(`match:${matchId}`).emit('userJoinedMatch', {
@@ -127,8 +126,12 @@ export const setupSocketHandlers = (io: Server<ClientToServerEvents, ServerToCli
 
         console.log(`👥 User ${socket.userEmail} joined match ${matchId}`);
       } catch (error) {
+        if (error instanceof UnauthorizedError) {
+          socket.emit('error', { message: error.message });
+        } else {
         console.error('Error joining match:', error);
         socket.emit('error', { message: 'Failed to join match' });
+        }
       }
     });
 
@@ -141,7 +144,7 @@ export const setupSocketHandlers = (io: Server<ClientToServerEvents, ServerToCli
         socket.leave(`match:${matchId}`);
         
         // Get user details
-        const user = await User.findByPk(socket.userId);
+        const user = await getUserById(socket.userId!);
         
         // Notify other participants
         socket.to(`match:${matchId}`).emit('userLeftMatch', {
@@ -153,8 +156,12 @@ export const setupSocketHandlers = (io: Server<ClientToServerEvents, ServerToCli
 
         console.log(`👋 User ${socket.userEmail} left match ${matchId}`);
       } catch (error) {
-        console.error('Error leaving match:', error);
-        socket.emit('error', { message: 'Failed to leave match' });
+        if (error instanceof UnauthorizedError) {
+          socket.emit('error', { message: error.message });
+        } else {
+        console.error('Error joining match:', error);
+        socket.emit('error', { message: 'Failed to join match' });
+        }
       }
     });
 
@@ -163,18 +170,11 @@ export const setupSocketHandlers = (io: Server<ClientToServerEvents, ServerToCli
       try {
         const { matchId, message } = data;
         
-        // Verify user is participant in the match
-        const participation = await UserMatch.findOne({
-          where: { user_id: socket.userId, match_id: matchId }
-        });
-
-        if (!participation) {
-          socket.emit('error', { message: 'Not authorized to send messages to this match' });
-          return;
-        }
-
+        // This will throw UnauthorizedError if not participant
+ await isUserMatchParticipant(socket.userId!, matchId);
+        
         // Get user details
-        const user = await User.findByPk(socket.userId);
+        const user = await getUserById(socket.userId!);
         
         if (!user) {
           socket.emit('error', { message: 'User not found' });
@@ -215,28 +215,22 @@ export const setupSocketHandlers = (io: Server<ClientToServerEvents, ServerToCli
         console.log(`💬 Message sent in match ${matchId} by ${user.email}: ${message}`);
 
         // Create notifications for other participants
-        const participants = await UserMatch.findAll({
-          where: {
-            match_id: matchId,
-            user_id: { [Op.ne]: socket.userId }, // Exclude the sender
-            participation_status: 'confirmed',
-          },
-          include: [{
-            model: User,
-            as: 'user',
-            attributes: ['id']
-          }]
-        });
+        const participantIdsForNotification = await getMatchParticipantsUtil(matchId, socket.userId!);
 
         const match = await Match.findByPk(matchId, { attributes: ['title'] });
         const matchTitle = match ? match.title : 'a match';
 
         for (const participant of participants) {
-          await createNotification(io, participant.user_id, 'new_message', `${user.first_name} ${user.last_name} sent a message in ${matchTitle}.`);
+        for (const participantId of participantIdsForNotification) {
+ await createNotification(io, participantId, 'new_message', `${user.first_name} ${user.last_name} sent a message in ${matchTitle}.`);
         }
       } catch (error) {
+        if (error instanceof UnauthorizedError) {
+          socket.emit('error', { message: error.message });
+        } else {
         console.error('Error sending message:', error);
         socket.emit('error', { message: 'Failed to send message' });
+        }
       }
     });
 
@@ -288,15 +282,18 @@ export const emitNotificationToUser = (io: Server, userId: string, notificationD
   }
 };
 
-// Utility function to emit notifications to a specific user
-export const emitNotificationToUser = (io: Server, userId: string, notificationData: any) => {
-  const socketIds = userSocketMap.get(userId);
-  if (socketIds && socketIds.length > 0) {
-    socketIds.forEach(socketId => {
-      io.to(socketId).emit('newNotification', notificationData);
-    });
-    console.log(`✉️ Emitted newNotification to user ${userId} on ${socketIds.length} sockets`);
-  } else {
-    console.log(`⚠️ No active sockets found for user ${userId}. Notification will only be stored in DB.`);
+// Helper function to check if a user is a confirmed participant in a match
+const isUserMatchParticipant = async (userId: string, matchId: string): Promise<boolean> => {
+  const participation = await UserMatch.findOne({
+    where: { user_id: userId, match_id: matchId, participation_status: 'confirmed' }
+  });
+  if (!participation) {
+ throw new UnauthorizedError('User is not a confirmed participant in this match.');
   }
+  return true;
 };
+
+
+
+
+

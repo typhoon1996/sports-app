@@ -1,7 +1,8 @@
 import express from 'express';
-import { authenticateToken, adminAuth } from '../middleware/performance';
-import adminController, { deleteMessage, disableUser } from '../controllers/adminController';
-
+import { adminAuth } from '../middleware/performance';
+import { authenticateToken } from '../utils/jwt'; // Corrected import path
+import adminController, { deleteMessage, disableUser } from '../controllers/adminController'; // Assuming deleteMessage and disableUser are still needed here or moved to controllers if not admin specific
+import adminController from '../controllers/adminController'; // Import the controller object
 const router = express.Router(); 
 
 // Apply authentication and admin authorization middleware to all admin routes

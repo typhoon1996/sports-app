@@ -3,9 +3,12 @@ import { ValidationError } from 'sequelize';
 import User from '../models/User';
 import { body, validationResult } from 'express-validator';
 import { generateToken, AuthenticatedRequest } from '../utils/jwt';
+import * as Sentry from '@sentry/node';
 import sharp from 'sharp';
 import AWS from 'aws-sdk';
 import { v4 as uuidv4 } from 'uuid'; // Using uuid for unique filenames
+import { imageProcessingQueue } from '../queues/imageProcessingQueue'; // Import the queue
+import { emailQueue } from '../queues/emailQueue'; // Import the email queue
 
 // Configure AWS SDK with environment variables
 AWS.config.update({
@@ -106,6 +109,7 @@ export const signup = async (req: Request, res: Response): Promise<void> => {
       }
     });
   } catch (error) {
+    Sentry.captureException(error);
     console.error('Signup error:', error);
     
     if (error instanceof ValidationError) {
@@ -181,6 +185,7 @@ export const login = async (req: Request, res: Response): Promise<void> => {
       }
     });
   } catch (error) {
+    Sentry.captureException(error);
     console.error('Login error:', error);
     res.status(500).json({
       error: 'Internal server error during login',
@@ -469,42 +474,21 @@ export const updateUserProfile = [
 
     if (req.file) {
       // Handle file upload
-      const file = req.file;
       try {
-        const resizedImageBuffer = await sharp(file.buffer)
-          .resize(200, 200, { fit: 'cover' })
-          .toFormat('jpeg')
-          .toBuffer();
-
-        // Delete old profile picture if it exists in S3
-        if (user.profile_picture_url) {
-          const oldS3Key = getS3KeyFromUrl(user.profile_picture_url);
-          if (oldS3Key && oldS3Key.startsWith('profile-pictures/')) { // Ensure it's a picture uploaded via this feature
-            try {
-              const deleteParams = {
-                Bucket: process.env.AWS_S3_BUCKET_NAME || '',
-                Key: oldS3Key,
-              };
-              await s3.deleteObject(deleteParams).promise();
-            } catch (deleteError) {
-              console.error('Error deleting old profile picture from S3:', deleteError);
-              // Continue with the new upload even if old deletion fails
-            }
-          }
-        }
-
-        const uploadParams = {
-          Bucket: process.env.AWS_S3_BUCKET_NAME || '',
-          Key: `profile-pictures/${userId}/${uuidv4()}.jpeg`, // Unique filename using user ID and UUID
-          Body: resizedImageBuffer,
-          ContentType: 'image/jpeg',
-          ACL: 'public-read' // Or adjust permissions based on your needs
-        };
-        
-        const uploadResult = await s3.upload(uploadParams).promise();
-        user.profile_picture_url = uploadResult.Location; // S3 object URL
-
-      } catch (error) {
+        // Add job to the image processing queue
+        await imageProcessingQueue.add('processProfilePicture', 
+ {
+ attempts: 3, // Retry up to 3 times
+ backoff: {
+ type: 'exponential',
+ delay: 1000, // Start with 1 second delay
+ },
+          userId: user.id,
+          fileBuffer: req.file.buffer,
+          oldImageUrl: user.profile_picture_url // Pass the old URL for potential deletion
+        });
+        // Note: The profile_picture_url will be updated by the worker after processing and upload
+      } catch (error: any) {
         console.error('Error processing or uploading profile picture:', error);
         return res.status(500).json({ message: 'Error processing or uploading profile picture.' });
       }

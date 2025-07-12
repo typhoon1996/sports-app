@@ -1,6 +1,7 @@
 import jwt from 'jsonwebtoken';
 import { Request, Response, NextFunction } from 'express';
 import User from '../models/User';
+import { UnauthorizedError } from './errors'; // Import custom error class
 
 // JWT payload interface
 export interface JWTPayload {
@@ -15,6 +16,14 @@ export interface AuthenticatedRequest extends Request {
   user?: User;
 }
 
+// Helper function to get the JWT secret
+const getJwtSecret = (): string => {
+  const secret = process.env.JWT_SECRET;
+  if (!secret) {
+    throw new Error('JWT_SECRET is not defined in environment variables');
+  }
+  return secret;
+};
 // Generate JWT token
 export const generateToken = (user: User): string => {
   const payload: JWTPayload = {
@@ -22,10 +31,7 @@ export const generateToken = (user: User): string => {
     email: user.email
   };
 
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error('JWT_SECRET is not defined in environment variables');
-  }
+  const secret = getJwtSecret();
 
   const expiresIn = process.env.JWT_EXPIRES_IN || '7d';
 
@@ -33,16 +39,12 @@ export const generateToken = (user: User): string => {
 };
 
 // Verify JWT token
-export const verifyToken = (token: string): JWTPayload => {
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error('JWT_SECRET is not defined in environment variables');
-  }
+export const verifyToken = (token: string): JWTPayload => {  const secret = getJwtSecret();
 
   try {
     return jwt.verify(token, secret) as JWTPayload;
   } catch (error) {
-    throw new Error('Invalid or expired token');
+    throw new UnauthorizedError('Invalid or expired token'); // Throw custom error
   }
 };
 
@@ -122,10 +124,7 @@ export const generateRefreshToken = (user: User): string => {
     type: 'refresh'
   };
 
-  const secret = process.env.JWT_SECRET;
-  if (!secret) {
-    throw new Error('JWT_SECRET is not defined in environment variables');
-  }
+  const secret = getJwtSecret();
 
   return jwt.sign(payload, secret, { expiresIn: '30d' } as any);
 };

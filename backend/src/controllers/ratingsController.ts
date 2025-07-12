@@ -3,6 +3,7 @@ import { ValidationError, ValidationErrorItem } from 'sequelize';
 import { body, validationResult } from 'express-validator';
 import User from '../models/User';
 import { Op } from 'sequelize';
+import * as Sentry from '@sentry/node';
 import Match from '../models/Match';
 import { Server } from 'socket.io';
 import UserMatch from '../models/UserMatch';
@@ -201,6 +202,7 @@ export const createRating = async (req: AuthenticatedRequest, res: Response, io:
     });
   } catch (error) {
     console.error('Create rating error:', error);
+    Sentry.captureException(error);
     
     if (error instanceof ValidationError) {
       res.status(400).json({

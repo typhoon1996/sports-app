@@ -2,6 +2,7 @@ import { Request, Response } from 'express';
 import { ValidationError, ValidationErrorItem } from 'sequelize';
 import User from '../models/User';
 import Match from '../models/Match';
+import * as Sentry from '@sentry/node';
 import UserMatch from '../models/UserMatch';
 import Sport from '../models/Sport';
 import { AuthenticatedRequest } from '../utils/jwt';
@@ -173,6 +174,7 @@ export const getMatches = async (req: Request, res: Response): Promise<void> => 
     });
   } catch (error) {
     console.error('Get matches error:', error);
+    Sentry.captureException(error);
     res.status(500).json({
       error: 'Internal server error while fetching matches',
       code: 'INTERNAL_ERROR'
@@ -216,6 +218,7 @@ export const getMatchById = async (req: Request, res: Response): Promise<void> =
     });
   } catch (error) {
     console.error('Get match by ID error:', error);
+    Sentry.captureException(error);
     res.status(500).json({
       error: 'Internal server error while fetching match',
       code: 'INTERNAL_ERROR'
@@ -291,6 +294,7 @@ export const getMatchDetails = async (req: Request, res: Response): Promise<void
     });
   } catch (error) {
     console.error('Get match details error:', error);
+    Sentry.captureException(error);
     res.status(500).json({
       error: 'Internal server error while fetching match details',
       code: 'INTERNAL_ERROR'
@@ -408,6 +412,7 @@ export const createMatch = async (req: AuthenticatedRequest, res: Response): Pro
     });
   } catch (error) {
     console.error('Create match error:', error);
+ Sentry.captureException(error);
 
     if (error instanceof ValidationError) {
       res.status(400).json({
@@ -559,6 +564,8 @@ export const updateMatch = async (req: AuthenticatedRequest, res: Response, io: 
     });
   } catch (error) {
     console.error('Update match error:', error);
+    Sentry.captureException(error);
+
 
     if (error instanceof ValidationError) {
       res.status(400).json({
@@ -643,6 +650,7 @@ export const deleteMatch = async (req: AuthenticatedRequest, res: Response): Pro
     });
   } catch (error) {
     console.error('Delete match error:', error);
+    Sentry.captureException(error);
     res.status(500).json({
       error: 'Internal server error while deleting match',
       code: 'INTERNAL_ERROR'
@@ -703,6 +711,7 @@ export const getUserMatches = async (req: AuthenticatedRequest, res: Response): 
     });
   } catch (error) {
     console.error('Get user matches error:', error);
+    Sentry.captureException(error);
     res.status(500).json({
       error: 'Internal server error while fetching user matches',
       code: 'INTERNAL_ERROR'
@@ -831,6 +840,7 @@ export const joinMatch = async (req: AuthenticatedRequest, res: Response, io: an
     });
   } catch (error) {
     console.error('Join match error:', error);
+    Sentry.captureException(error);
     res.status(500).json({
       error: 'Internal server error while joining match',
       code: 'INTERNAL_ERROR'
@@ -903,6 +913,7 @@ export const leaveMatch = async (req: AuthenticatedRequest, res: Response): Prom
     });
   } catch (error) {
     console.error('Leave match error:', error);
+    Sentry.captureException(error);
     res.status(500).json({
       error: 'Internal server error while leaving match',
       code: 'INTERNAL_ERROR'
@@ -976,6 +987,7 @@ export const getUserParticipatingMatches = async (req: AuthenticatedRequest, res
     });
   } catch (error) {
     console.error('Get user participating matches error:', error);
+    Sentry.captureException(error);
     res.status(500).json({
       error: 'Internal server error while fetching user participating matches',
       code: 'INTERNAL_ERROR'
@@ -1023,6 +1035,7 @@ export const getMatchParticipants = async (req: AuthenticatedRequest, res: Respo
     });
   } catch (error) {
     console.error('Get match participants error:', error);
+    Sentry.captureException(error);
     res.status(500).json({
       error: 'Internal server error while fetching match participants',
       code: 'INTERNAL_ERROR'

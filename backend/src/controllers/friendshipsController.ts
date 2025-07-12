@@ -4,6 +4,7 @@ import User from '../models/User';
 import { AuthenticatedRequest } from '../utils/jwt';
 import { Op } from 'sequelize';
 import { createNotification } from '../utils/notificationUtils';
+import * as Sentry from '@sentry/node';
 
 export const sendFriendRequest = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
@@ -98,6 +99,7 @@ export const sendFriendRequest = async (req: AuthenticatedRequest, res: Response
       data: { friendship }
     });
   } catch (error) {
+    Sentry.captureException(error);
     console.error('Send friend request error:', error);
     res.status(500).json({
       error: 'Internal server error while sending friend request',

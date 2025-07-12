@@ -10,11 +10,11 @@ import { authenticateToken } from '../utils/jwt';
 
 const router = express.Router();
 
-// Public routes
+// --- Public routes ---
 router.get('/', getAllSports);
 router.get('/:id', getSportById);
 
-// Protected routes (for future admin functionality)
+// --- Protected routes (Admin) ---
 router.post('/', authenticateToken, createSport);
 router.put('/:id', authenticateToken, updateSport);
 router.delete('/:id', authenticateToken, deleteSport);

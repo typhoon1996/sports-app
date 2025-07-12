@@ -1,6 +1,5 @@
 import express from 'express';
 import { signup, login, getProfile, updateUserProfile, changePassword, getUserProfile, getUserNotificationPreferences, updateUserNotificationPreferences } from '../controllers/authController';
-import { authenticateToken } from '../utils/jwt';
 import multer from 'multer';
 import path from 'path';
 
@@ -14,19 +13,25 @@ const upload = multer({
     },
   }),
 });
+import { authenticateToken } from '../utils/jwt';
 
 const router = express.Router();
 
-// Public routes (no authentication required)
+// --- Authentication Routes (Public) ---
 router.post('/signup', signup);
 router.post('/login', login);
 
-// Protected routes (authentication required)
+// --- User Profile Routes (Protected) ---
 router.get('/profile', authenticateToken, getProfile);
 router.put('/profile', authenticateToken, upload.single('profile_picture'), updateUserProfile);
+
+// --- Password Management Routes (Protected) ---
 router.put('/change-password', authenticateToken, changePassword);
+
+// --- Notification Preferences Routes (Protected) ---
 router.get('/preferences/notifications', authenticateToken, getUserNotificationPreferences);
 router.put('/preferences/notifications', authenticateToken, updateUserNotificationPreferences);
 
 
 export default router;
+
