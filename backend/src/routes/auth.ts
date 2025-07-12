@@ -1,5 +1,5 @@
 import express from 'express';
-import { signup, login, getProfile, updateProfile, changePassword } from '../controllers/authController';
+import { signup, login, getProfile, updateUserProfile, changePassword } from '../controllers/authController';
 import { authenticateToken } from '../utils/jwt';
 
 const router = express.Router();
@@ -10,7 +10,7 @@ router.post('/login', login);
 
 // Protected routes (authentication required)
 router.get('/profile', authenticateToken, getProfile);
-router.put('/profile', authenticateToken, updateProfile);
+router.put('/profile', authenticateToken, updateUserProfile);
 router.put('/change-password', authenticateToken, changePassword);
 
 export default router;
