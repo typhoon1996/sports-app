@@ -3,6 +3,11 @@ import jwt from 'jsonwebtoken';
 import User from '../models/User';
 import Match from '../models/Match';
 import UserMatch from '../models/UserMatch';
+import { createNotification } from '../utils/notificationUtils';
+import { Op } from 'sequelize';import Friendship from '../models/Friendship';
+
+// Map to store userId to an array of socket IDs
+const userSocketMap: Map<string, string[]> = new Map();
 
 interface AuthenticatedSocket extends Socket {
   userId?: string;
@@ -73,6 +78,15 @@ export const setupSocketHandlers = (io: Server<ClientToServerEvents, ServerToCli
 
       socket.userId = user.id;
       socket.userEmail = user.email;
+
+      // Add socket ID to the user's entry in the map
+      if (socket.userId) {
+        if (!userSocketMap.has(socket.userId)) {
+          userSocketMap.set(socket.userId, []);
+        }
+        userSocketMap.get(socket.userId)!.push(socket.id);
+      }
+
       next();
     } catch (error) {
       next(new Error('Authentication failed'));
@@ -167,6 +181,23 @@ export const setupSocketHandlers = (io: Server<ClientToServerEvents, ServerToCli
           return;
         }
 
+        // Check if the sender is blocked by any participant in the match, or vice versa
+        const participantsIds = (await UserMatch.findAll({ where: { match_id: matchId, participation_status: 'confirmed' }, attributes: ['user_id'] })).map(p => p.user_id);
+        
+        const blockedRelationship = await Friendship.findOne({
+          where: {
+            [Op.or]: [
+              { sender_id: socket.userId, receiver_id: { [Op.in]: participantsIds } },
+              { sender_id: { [Op.in]: participantsIds }, receiver_id: socket.userId },
+            ],
+            status: 'blocked',
+          },
+        });
+
+        if (blockedRelationship) {
+          socket.emit('error', { message: 'Cannot send message due to a blocked relationship.' });
+          return;
+        }
         // Create message object
         const messageData = {
           id: generateMessageId(),
@@ -182,6 +213,27 @@ export const setupSocketHandlers = (io: Server<ClientToServerEvents, ServerToCli
         io.to(`match:${matchId}`).emit('newMessage', messageData);
         
         console.log(`💬 Message sent in match ${matchId} by ${user.email}: ${message}`);
+
+        // Create notifications for other participants
+        const participants = await UserMatch.findAll({
+          where: {
+            match_id: matchId,
+            user_id: { [Op.ne]: socket.userId }, // Exclude the sender
+            participation_status: 'confirmed',
+          },
+          include: [{
+            model: User,
+            as: 'user',
+            attributes: ['id']
+          }]
+        });
+
+        const match = await Match.findByPk(matchId, { attributes: ['title'] });
+        const matchTitle = match ? match.title : 'a match';
+
+        for (const participant of participants) {
+          await createNotification(io, participant.user_id, 'new_message', `${user.first_name} ${user.last_name} sent a message in ${matchTitle}.`);
+        }
       } catch (error) {
         console.error('Error sending message:', error);
         socket.emit('error', { message: 'Failed to send message' });
@@ -190,6 +242,16 @@ export const setupSocketHandlers = (io: Server<ClientToServerEvents, ServerToCli
 
     // Handle disconnection
     socket.on('disconnect', () => {
+      // Remove socket ID from the user's entry in the map
+      if (socket.userId) {
+        const sockets = userSocketMap.get(socket.userId);
+        if (sockets) {
+          const index = sockets.indexOf(socket.id);
+          if (index !== -1) {
+            sockets.splice(index, 1);
+          }
+        }
+      }
       console.log(`🔌 User disconnected: ${socket.userEmail} (${socket.userId})`);
     });
 
@@ -211,4 +273,30 @@ export const broadcastMatchUpdate = (io: Server, matchId: string, participantCou
     matchId,
     participantCount
   });
+};
+
+// Utility function to emit notifications to a specific user
+export const emitNotificationToUser = (io: Server, userId: string, notificationData: any) => {
+  const socketIds = userSocketMap.get(userId);
+  if (socketIds && socketIds.length > 0) {
+    socketIds.forEach(socketId => {
+      io.to(socketId).emit('newNotification', notificationData);
+    });
+    console.log(`✉️ Emitted newNotification to user ${userId} on ${socketIds.length} sockets`);
+  } else {
+    console.log(`⚠️ No active sockets found for user ${userId}. Notification will only be stored in DB.`);
+  }
+};
+
+// Utility function to emit notifications to a specific user
+export const emitNotificationToUser = (io: Server, userId: string, notificationData: any) => {
+  const socketIds = userSocketMap.get(userId);
+  if (socketIds && socketIds.length > 0) {
+    socketIds.forEach(socketId => {
+      io.to(socketId).emit('newNotification', notificationData);
+    });
+    console.log(`✉️ Emitted newNotification to user ${userId} on ${socketIds.length} sockets`);
+  } else {
+    console.log(`⚠️ No active sockets found for user ${userId}. Notification will only be stored in DB.`);
+  }
 };

@@ -10,6 +10,10 @@ import authRoutes from './routes/auth';
 import sportsRoutes from './routes/sports';
 import matchesRoutes from './routes/matches';
 import ratingsRoutes from './routes/ratings';
+import notificationsRoutes from './routes/notifications';
+import friendshipsRoutes from './routes/friendships';
+import adminRoutes from './routes/admin';
+import reportsRoutes from './routes/reports';
 import { setupSocketHandlers } from './socket/index';
 import { performanceMiddleware, getHealthMetrics } from './middleware/performance';
 
@@ -76,6 +80,10 @@ app.use('/api/auth', authRoutes);
 app.use('/api/sports', sportsRoutes);
 app.use('/api/matches', matchesRoutes);
 app.use('/api/ratings', ratingsRoutes);
+app.use('/api/notifications', notificationsRoutes);
+app.use('/api/friendships', friendshipsRoutes);
+app.use('/api/reports', reportsRoutes);
+app.use('/api/admin', adminRoutes);
 
 // 404 handler for API routes
 app.use('/api/*', (req, res) => {
@@ -168,3 +176,4 @@ process.on('SIGTERM', async () => {
 startServer();
 
 export default app;
+export { io };

@@ -21,6 +21,9 @@ export interface UserAttributes {
   is_active: boolean;
   // OAuth fields
   google_id?: string;
+  is_blocked_by_admin: boolean;
+  is_admin: boolean;
+ notification_preferences?: object | any;
   facebook_id?: string;
   provider?: 'local' | 'google' | 'facebook';
   provider_id?: string;
@@ -52,6 +55,9 @@ class User extends Model<UserAttributes, UserCreationAttributes> implements User
   public is_verified!: boolean;
   public is_active!: boolean;
   public google_id?: string;
+  public is_admin!: boolean;
+  public is_blocked_by_admin!: boolean;
+  public notification_preferences?: object | any;
   public facebook_id?: string;
   public provider?: 'local' | 'google' | 'facebook';
   public provider_id?: string;
@@ -203,6 +209,20 @@ User.init({
     type: DataTypes.BOOLEAN,
     allowNull: false,
     defaultValue: true
+  },
+  is_admin: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  is_blocked_by_admin: {
+    type: DataTypes.BOOLEAN,
+    allowNull: false,
+    defaultValue: false
+  },
+  notification_preferences: {
+    type: DataTypes.JSONB,
+    allowNull: true,
   },
   created_at: {
     type: DataTypes.DATE,

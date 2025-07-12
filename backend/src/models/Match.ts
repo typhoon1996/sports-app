@@ -1,4 +1,4 @@
-import { DataTypes, Model, Optional, QueryTypes } from 'sequelize';
+import { DataTypes, Model, Optional, QueryTypes, Sequelize } from 'sequelize';
 import sequelize from '../config/database';
 import User from './User';
 import Sport from './Sport';
@@ -28,6 +28,7 @@ export interface MatchAttributes {
   is_public: boolean;
   created_at: Date;
   updated_at: Date;
+  search_vector?: any; // For full-text search
 }
 
 // Match creation attributes
@@ -55,6 +56,7 @@ class Match extends Model<MatchAttributes, MatchCreationAttributes> implements M
   public status!: MatchStatus;
   public is_public!: boolean;
   public readonly created_at!: Date;
+  public readonly updated_at!: Date;
   public readonly updated_at!: Date;
 
   // Associations
@@ -237,6 +239,14 @@ Match.init({
     type: DataTypes.DATE,
     allowNull: false,
     defaultValue: DataTypes.NOW
+  },
+  search_vector: {
+    type: 'TSVECTOR' as any,
+    allowNull: true,
+    comment: 'Generated column for full-text search',
+    dialectOptions: {
+      collate: 'pg_catalog.english' // Use English dictionary for stemming
+    }
   }
 }, {
   sequelize,

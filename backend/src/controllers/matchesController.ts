@@ -5,6 +5,8 @@ import Match from '../models/Match';
 import UserMatch from '../models/UserMatch';
 import Sport from '../models/Sport';
 import { AuthenticatedRequest } from '../utils/jwt';
+import { Sequelize } from 'sequelize';
+import { createNotification } from '../utils/notificationUtils';
 
 interface UserMatchWithMatch extends UserMatch {
   match: Match;
@@ -21,83 +23,117 @@ export const getMatches = async (req: Request, res: Response): Promise<void> => 
       sport_id,
       skill_level,
       date,
+      sortBy,
       latitude,
       longitude,
       radius = 10,
       status = 'upcoming',
       page = 1,
+      searchTerm
       limit = 20
     } = req.query;
 
+
     // Build where clause for filtering
-    const whereClause: any = {
+    const whereConditions: any[] = [{
       status: status as string,
       is_public: true
-    };
+    }];
 
     if (sport_id) {
-      whereClause.sport_id = sport_id;
+      whereConditions.push({ sport_id });
     }
 
     if (skill_level) {
-      whereClause.required_skill_level = skill_level;
+      whereConditions.push({ required_skill_level: skill_level });
     }
 
     if (date) {
-      whereClause.scheduled_date = date;
+      whereConditions.push({ scheduled_date: date });
     }
 
+    // Add search term condition
+    if (searchTerm) {
+      whereConditions.push({
+        [Op.or]: [
+          { title: { [Op.iLike]: `%${searchTerm}%` } },
+          { description: { [Op.iLike]: `%${searchTerm}%` } },
+          { location: { [Op.iLike]: `%${searchTerm}%` } },
+        ],
+      });
+    }
+
+    const whereClause: any = { [Op.and]: whereConditions };
+
     // Calculate offset for pagination
+
+    let orderClause: any[] = [];
+    if (sortBy === 'participants') {
+      orderClause = [
+        [Sequelize.literal('participantCount'), 'DESC']
+      ];
+    } else {
+      orderClause = [
+        ['scheduled_date', 'ASC'],
+        ['start_time', 'ASC']
+      ];
+    }
+
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
 
     let matches;
     let total;
 
-    // If location is provided, use proximity search
+    // If location is provided, calculate distance and potentially filter by radius
     if (latitude && longitude) {
-      matches = await Match.findNearby(
-        parseFloat(latitude as string),
-        parseFloat(longitude as string),
-        parseInt(radius as string)
-      );
-      
-      // Apply additional filters to nearby matches
+      const lat = parseFloat(latitude as string);
+      const lon = parseFloat(longitude as string);
+      const rad = parseInt(radius as string);
+
+      // Add distance calculation to the select
+      const distanceQuery = `(6371 * acos(cos(radians(${lat})) * cos(radians(latitude)) * cos(radians(longitude) - radians(${lon})) + sin(radians(${lat})) * sin(radians(latitude)))))`;
+
+      const result = await Match.findAndCountAll({
+        attributes: {
+          include: [[Sequelize.literal(distanceQuery), 'distance']]
+        },
+        where: {
+          [Op.and]: [
+            ...whereConditions,
+            Sequelize.literal(`${distanceQuery} <= ${rad}`) // Filter by radius
+          ]
+        },
+        include: [
+          {
+            model: Sport,
+            as: 'sport',
+            attributes: ['id', 'name', 'min_players', 'max_players']
+          }
+        ],
+        order: [...orderClause, Sequelize.literal('distance ASC')], // Order by distance, add other sorts if needed
+        limit: parseInt(limit as string),
+        offset
+      });
+
+      matches = result.rows;
+      total = result.count;
+
+      // The filtering logic below is no longer needed as filtering is done in the query
       matches = matches.filter(match => {
         if (sport_id && match.sport_id !== sport_id) return false;
         if (skill_level && match.required_skill_level !== skill_level) return false;
-        if (date && match.scheduled_date !== date) return false;
         return true;
       });
-
       total = matches.length;
-      
-      // Apply pagination
-      matches = matches.slice(offset, offset + parseInt(limit as string));
 
-      // Load associations for the filtered matches
-      for (let i = 0; i < matches.length; i++) {
-        const fullMatch = await Match.findByPk(matches[i].id, {
-          include: [
-            {
-              model: User,
-              as: 'organizer',
-              attributes: ['id', 'first_name', 'last_name', 'avg_rating', 'total_ratings']
-            },
-            {
-              model: Sport,
-              as: 'sport',
-              attributes: ['id', 'name', 'min_players', 'max_players']
-            }
-          ]
-        });
-        if (fullMatch) {
-          matches[i] = fullMatch;
-        }
-      }
-    } else {
-      // Regular search without proximity
+    } else { // Regular search without proximity
       const result = await Match.findAndCountAll({
-        where: whereClause,
+        attributes: {
+          include: [[Sequelize.fn('COUNT', Sequelize.col('participants.id')), 'participantCount']]
+        },
+        where: {
+          [Op.and]: whereConditions
+        },
         include: [
           {
             model: User,
@@ -109,7 +145,11 @@ export const getMatches = async (req: Request, res: Response): Promise<void> => 
             as: 'sport',
             attributes: ['id', 'name', 'min_players', 'max_players']
           }
-        ],
+          ,
+          {
+            model: UserMatch,
+            as: 'participants', // Assuming you have this alias in associations.ts
+          }],
         order: [['scheduled_date', 'ASC'], ['start_time', 'ASC']],
         limit: parseInt(limit as string),
         offset
@@ -228,7 +268,7 @@ export const getMatchDetails = async (req: Request, res: Response): Promise<void
     });
 
     const participants = participations.map(p => (p as UserMatchWithUser).user);
-    
+
     // Add organizer to participants if not already included
     const organizerInParticipants = participants.find(p => p.id === match.organizer.id);
     if (!organizerInParticipants) {
@@ -262,7 +302,7 @@ export const getMatchDetails = async (req: Request, res: Response): Promise<void
 export const createMatch = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const user = req.user;
-    
+
     if (!user) {
       res.status(401).json({
         error: 'User not authenticated',
@@ -288,8 +328,8 @@ export const createMatch = async (req: AuthenticatedRequest, res: Response): Pro
     } = req.body;
 
     // Validate required fields
-    if (!sport_id || !title || !location || !latitude || !longitude || 
-        !scheduled_date || !start_time || !max_players) {
+    if (!sport_id || !title || !location || !latitude || !longitude ||
+      !scheduled_date || !start_time || !max_players) {
       res.status(400).json({
         error: 'Missing required fields: sport_id, title, location, latitude, longitude, scheduled_date, start_time, max_players',
         code: 'VALIDATION_ERROR'
@@ -368,7 +408,7 @@ export const createMatch = async (req: AuthenticatedRequest, res: Response): Pro
     });
   } catch (error) {
     console.error('Create match error:', error);
-    
+
     if (error instanceof ValidationError) {
       res.status(400).json({
         error: 'Validation error',
@@ -386,11 +426,11 @@ export const createMatch = async (req: AuthenticatedRequest, res: Response): Pro
 };
 
 // Update match (only organizer can update)
-export const updateMatch = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+export const updateMatch = async (req: AuthenticatedRequest, res: Response, io: any): Promise<void> => {
   try {
     const user = req.user;
     const { id } = req.params;
-    
+
     if (!user) {
       res.status(401).json({
         error: 'User not authenticated',
@@ -417,6 +457,8 @@ export const updateMatch = async (req: AuthenticatedRequest, res: Response): Pro
       });
       return;
     }
+
+    const oldStatus = match.status;
 
     // Don't allow updates to completed or cancelled matches
     if (match.status === 'completed' || match.status === 'cancelled') {
@@ -445,7 +487,7 @@ export const updateMatch = async (req: AuthenticatedRequest, res: Response): Pro
 
     // Build update data (only provided fields)
     const updateData: any = {};
-    
+
     if (title !== undefined) updateData.title = title;
     if (description !== undefined) updateData.description = description;
     if (location !== undefined) updateData.location = location;
@@ -473,6 +515,26 @@ export const updateMatch = async (req: AuthenticatedRequest, res: Response): Pro
 
     await match.update(updateData);
 
+    // Fetch all confirmed participants for this match (excluding the organizer)
+    const participations = await UserMatch.findAll({
+      where: {
+        match_id: id,
+        participation_status: 'confirmed',
+      },
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id'] // Only need the user ID
+      }]
+    });
+
+    // Create notifications for all participants (excluding the organizer)
+    for (const participation of participations) {
+      if (participation.user_id !== user.id) {
+        await createNotification(io, participation.user_id, 'match_update', `The match "${match.title}" has been updated.`);
+      }
+    }
+
     // Fetch updated match with associations
     const updatedMatch = await Match.findByPk(match.id, {
       include: [
@@ -497,7 +559,7 @@ export const updateMatch = async (req: AuthenticatedRequest, res: Response): Pro
     });
   } catch (error) {
     console.error('Update match error:', error);
-    
+
     if (error instanceof ValidationError) {
       res.status(400).json({
         error: 'Validation error',
@@ -519,7 +581,7 @@ export const deleteMatch = async (req: AuthenticatedRequest, res: Response): Pro
   try {
     const user = req.user;
     const { id } = req.params;
-    
+
     if (!user) {
       res.status(401).json({
         error: 'User not authenticated',
@@ -556,6 +618,24 @@ export const deleteMatch = async (req: AuthenticatedRequest, res: Response): Pro
       return;
     }
 
+    // Fetch all confirmed participants for this match (including the organizer)
+    const participants = await UserMatch.findAll({
+      where: {
+        match_id: id,
+        participation_status: 'confirmed',
+      },
+      include: [{
+        model: User,
+        as: 'user',
+        attributes: ['id'] // Only need the user ID
+      }]
+    });
+
+    // Create notifications for all participants
+    for (const participation of participants) {
+      await createNotification(participation.user_id, 'match_cancellation', `The match "${match.title}" has been cancelled.`);
+    }
+
     await match.destroy();
 
     res.status(200).json({
@@ -574,7 +654,7 @@ export const deleteMatch = async (req: AuthenticatedRequest, res: Response): Pro
 export const getUserMatches = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const user = req.user;
-    
+
     if (!user) {
       res.status(401).json({
         error: 'User not authenticated',
@@ -631,11 +711,11 @@ export const getUserMatches = async (req: AuthenticatedRequest, res: Response): 
 };
 
 // Join a match
-export const joinMatch = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
+export const joinMatch = async (req: AuthenticatedRequest, res: Response, io: any): Promise<void> => {
   try {
     const user = req.user;
     const { matchId } = req.params;
-    
+
     if (!user) {
       res.status(401).json({
         error: 'User not authenticated',
@@ -713,12 +793,35 @@ export const joinMatch = async (req: AuthenticatedRequest, res: Response): Promi
       return;
     }
 
+    const match = await Match.findByPk(matchId, {
+      include: [
+        {
+          model: Sport,
+          as: 'sport',
+          attributes: ['id', 'name', 'min_players', 'max_players']
+        }
+      ]
+    });
+
+
     // Create participation record
     const participation = await UserMatch.create({
       user_id: user.id,
       match_id: matchId,
       participation_status: 'confirmed'
     });
+
+    // Fetch the match organizer to send them a notification
+    const organizer = await User.findByPk(match.organizer_id);
+
+    if (organizer) {
+      // Create a notification for the match organizer
+      await createNotification(io, organizer.id, 'new_participant', `${user.first_name} ${user.last_name} has joined your match "${match.title}".`);
+    }
+
+    // Create a notification for the joining user
+    await createNotification(io, user.id, 'match_joined', `You have successfully joined the match "${match.title}".`);
+
 
     res.status(201).json({
       message: 'Successfully joined the match',
@@ -740,7 +843,7 @@ export const leaveMatch = async (req: AuthenticatedRequest, res: Response): Prom
   try {
     const user = req.user;
     const { matchId } = req.params;
-    
+
     if (!user) {
       res.status(401).json({
         error: 'User not authenticated',
@@ -788,6 +891,13 @@ export const leaveMatch = async (req: AuthenticatedRequest, res: Response): Prom
     // Remove participation record
     await participation.destroy();
 
+    // Fetch the match organizer to send them a notification
+    const organizer = await User.findByPk(match.organizer_id);
+
+    if (organizer) {
+      await createNotification(organizer.id, 'user_left_match', `${user.first_name} ${user.last_name} has left your match "${match.title}".`);
+    }
+
     res.status(200).json({
       message: 'Successfully left the match'
     });
@@ -804,7 +914,7 @@ export const leaveMatch = async (req: AuthenticatedRequest, res: Response): Prom
 export const getUserParticipatingMatches = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const user = req.user;
-    
+
     if (!user) {
       res.status(401).json({
         error: 'User not authenticated',
@@ -877,7 +987,7 @@ export const getUserParticipatingMatches = async (req: AuthenticatedRequest, res
 export const getMatchParticipants = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
   try {
     const { matchId } = req.params;
-    
+
     // Check if match exists
     const match = await Match.findByPk(matchId);
 

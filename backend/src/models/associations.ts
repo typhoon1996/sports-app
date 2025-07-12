@@ -3,6 +3,9 @@ import Match from './Match';
 import UserMatch from './UserMatch';
 import Sport from './Sport';
 import Rating from './Rating';
+import Notification from './Notification';
+import Friendship from './Friendship';
+import Report from './Report';
 
 // Define associations between models
 export const defineAssociations = () => {
@@ -104,7 +107,52 @@ export const defineAssociations = () => {
     as: 'match'
   });
 
+  // User - Notification associations
+  User.hasMany(Notification, {
+    foreignKey: 'user_id',
+    as: 'notifications',
+    onDelete: 'CASCADE',
+  });
+
+  Notification.belongsTo(User, {
+    foreignKey: 'user_id',
+    as: 'user',
+  });
+
+  // User - Friendship associations
+  User.hasMany(Friendship, {
+    foreignKey: 'sender_id',
+    as: 'sentFriendRequests',
+    onDelete: 'CASCADE',
+  });
+
+  User.hasMany(Friendship, {
+    foreignKey: 'receiver_id',
+    as: 'receivedFriendRequests',
+    onDelete: 'CASCADE',
+  });
+
+  Friendship.belongsTo(User, {
+    foreignKey: 'sender_id',
+    as: 'sender',
+  });
+
+  Friendship.belongsTo(User, {
+    foreignKey: 'receiver_id',
+    as: 'receiver',
+  });
+
+  // User - Report associations
+  User.hasMany(Report, {
+    foreignKey: 'reporter_id',
+    as: 'reportsFiled',
+    onDelete: 'CASCADE',
+  });
+  Report.belongsTo(User, {
+    foreignKey: 'reporter_id',
+    as: 'reporter',
+  });
   console.log('✅ Model associations defined successfully');
 };
 
-export { User, Sport, Match, UserMatch, Rating };
+export { User, Sport, Match, UserMatch, Rating, Notification, Friendship, Report };

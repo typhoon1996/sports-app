@@ -1,14 +1,25 @@
 import { Request, Response } from 'express';
 import { ValidationError, ValidationErrorItem } from 'sequelize';
+import { body, validationResult } from 'express-validator';
 import User from '../models/User';
+import { Op } from 'sequelize';
 import Match from '../models/Match';
+import { Server } from 'socket.io';
 import UserMatch from '../models/UserMatch';
 import Rating from '../models/Rating';
 import { AuthenticatedRequest } from '../utils/jwt';
+import { createNotification } from '../utils/notificationUtils';
 
 // Create a rating
-export const createRating = async (req: AuthenticatedRequest, res: Response): Promise<void> => {
-  try {
+export const createRating = [
+  body('comment').optional().isString().isLength({ max: 500 }),
+],
+export const createRating = async (req: AuthenticatedRequest, res: Response, io: Server): Promise<void> => {
+    const user = req.user;
+
+  body('comment').optional().isString().isLength({ max: 500 }),
+],
+export const createRating = async (req: AuthenticatedRequest, res: Response, io: Server): Promise<void> => {
     const user = req.user;
     
     if (!user) {
@@ -17,6 +28,11 @@ export const createRating = async (req: AuthenticatedRequest, res: Response): Pr
         code: 'AUTH_REQUIRED'
       });
       return;
+    }
+
+    const errors = validationResult(req);
+    if (!errors.isEmpty()) {
+      return res.status(400).json({ errors: errors.array() });
     }
 
     const {
@@ -140,6 +156,15 @@ export const createRating = async (req: AuthenticatedRequest, res: Response): Pr
       is_anonymous
     });
 
+    // Create a notification for the rated user
+    await createNotification(
+ io,
+ rated_user_id,
+ 'rating_received',
+ `You received a rating (${rating}/5) from ${is_anonymous ? 'an anonymous user' : `${user.first_name} ${user.last_name}`} for the match "${match.title}".`
+    );
+
+
     // Update user's average rating
     const { avgRating, totalRatings } = await Rating.getUserAverageRating(rated_user_id);
     await ratedUser.update({
@@ -196,8 +221,8 @@ export const createRating = async (req: AuthenticatedRequest, res: Response): Pr
 // Get ratings for a specific user
 export const getUserRatings = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { userId } = req.params;
-    const { page = 1, limit = 20, rating_type } = req.query;
+    const { userId } = req.params;    const { page = 1, limit = 20, rating_type, sortBy = 'createdAt', sortOrder = 'DESC', minRating, maxRating } = req.query;
+    const { page = 1, limit = 20, rating_type, sortBy = 'createdAt', sortOrder = 'DESC' } = req.query;
 
     // Check if user exists
     const user = await User.findByPk(userId);
@@ -216,6 +241,16 @@ export const getUserRatings = async (req: Request, res: Response): Promise<void>
 
     if (rating_type) {
       whereClause.rating_type = rating_type;
+    }
+
+    if (minRating !== undefined || maxRating !== undefined) {
+      whereClause.rating = {
+        [Op.gte]: minRating !== undefined ? parseInt(minRating as string) : 1,
+        [Op.lte]: maxRating !== undefined ? parseInt(maxRating as string) : 5,
+      };
+      if (minRating !== undefined) whereClause.rating[Op.gte] = parseInt(minRating as string);
+      if (maxRating !== undefined) whereClause.rating[Op.lte] = parseInt(maxRating as string);
+
     }
 
     const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
@@ -241,7 +276,12 @@ export const getUserRatings = async (req: Request, res: Response): Promise<void>
           ]
         }
       ],
-      order: [['created_at', 'DESC']],
+      order: [
+        sortBy === 'rating'
+? ['rating', sortOrder as string]
+          : ['created_at', 'DESC'],
+      ],
+
       limit: parseInt(limit as string),
       offset
     });
@@ -297,7 +337,7 @@ export const getUserRatings = async (req: Request, res: Response): Promise<void>
 // Get ratings for a specific match
 export const getMatchRatings = async (req: Request, res: Response): Promise<void> => {
   try {
-    const { matchId } = req.params;
+    const { matchId } = req.params;    const { page = 1, limit = 20 } = req.query;
 
     // Check if match exists
     const match = await Match.findByPk(matchId);
@@ -309,13 +349,22 @@ export const getMatchRatings = async (req: Request, res: Response): Promise<void
       return;
     }
 
-    const ratings = await Rating.getMatchRatings(matchId);
+    const offset = (parseInt(page as string) - 1) * parseInt(limit as string);
+
+    const { count, rows: ratings } = await Rating.getMatchRatings(matchId, parseInt(limit as string), offset);
 
     res.status(200).json({
       message: 'Match ratings retrieved successfully',
       data: {
         ratings,
-        count: ratings.length
+      },
+      pagination: {
+        total: count,
+        page: parseInt(page as string),
+        limit: parseInt(limit as string),
+        totalPages: Math.ceil(count / parseInt(limit as string))
+
+
       }
     });
   } catch (error) {
